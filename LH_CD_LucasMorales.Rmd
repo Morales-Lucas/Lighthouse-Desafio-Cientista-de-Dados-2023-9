@@ -1,0 +1,257 @@
+---
+title: "LH_CS_LucasMorales"
+author: "Lucas Morales"
+date: '2023-07-12'
+output: html_document
+---
+
+```{r}
+library(dplyr)
+library(fastDummies)
+library(gplots)    
+library(ggplot2)
+library(randomForest)
+library(caret)
+library(ranger)
+library(rpart)
+library(Metrics)
+```
+
+Para iniciarmos nossas análises, iremos inicialmente carregar o base de dados de treinamento e a base de testes.
+
+```{r}
+dados_treinamento = read.csv("cars_train.csv", sep=";",fileEncoding = "UTF-8")
+dados_teste = read.csv("cars_test.csv", sep=";",fileEncoding = "UTF-8")
+```
+
+Agora, converter os dados de texto para categorias conforme necessário e verificar se há valores ausentes.
+
+```{r}
+dados_treinamento=as.data.frame(unclass(dados_treinamento),stringsAsFactors = TRUE)
+dados_teste=as.data.frame(unclass(dados_teste),stringsAsFactors = TRUE)
+
+sapply(dados_treinamento, function(x) sum(is.na(x)))
+sapply(dados_teste, function(x) sum(is.na(x)))
+
+#Como observamos, possuimos valores ausentes no num_fotos. Iremos corrigi-los.
+dados_treinamento$num_fotos = ifelse(is.na(dados_treinamento$num_fotos),0,dados_treinamento$num_fotos)
+
+dados_teste$num_fotos = ifelse(is.na(dados_teste$num_fotos),0,dados_teste$num_fotos)
+
+dados_treinamento$ano_modelo<- factor(dados_treinamento$ano_modelo)
+dados_treinamento$ano_de_fabricacao<- factor(dados_treinamento$ano_de_fabricacao)
+
+
+dados_teste$ano_modelo<- factor(dados_teste$ano_modelo)
+dados_teste$ano_de_fabricacao<- factor(dados_teste$ano_de_fabricacao)
+```
+
+# 1)
+
+Iremos utilizar a função "summary" para observar as principais estatisticas de cada variável
+
+```{r}
+
+summary(dados_treinamento)
+
+```
+
+A função summary nos permite observar de modo simples e compacto uma visão geral de todas as variáveis que temos em nosso banco de dados.
+
+Com ela, podemos realizar diversas análises, como:
+
+-   Padrões e tendências através da média, mediana e quartis.
+
+-   Dispersão e amplitude dos dados, através do minimo e do máximo fornecido.
+
+-   Detectar a frequência para as variáveis categóricas, permitindo observar como a presença delas se dão em relação com as outras.
+
+-   Valores ausentes e tipo dos dados.
+
+Apesar de fornecer estatísticas simples, é possivel observar caracteristicas importantes de nossa população, como a maior concentração de carros vendidos na cidade de São Paulo, a marca mais vendida, o preço médio dos carros, entre outros.
+
+# 2)
+
+Em nossa análise exploratória de dados, iremos responder as seguintes perguntas:
+
+-   Qual o melhor estado cadastrado na base de dados para se vender um carro de marca popular e por quê?
+
+    ```{r}
+    dados_populares = dados_treinamento %>%
+      filter(marca %in% c("VOLKSWAGEN", "CHEVROLET", "FIAT", "HONDA"))
+
+
+    media_preco_estado = dados_populares %>%
+      group_by(estado_vendedor) %>%
+      summarise(media_preco = mean(preco)) %>%
+      arrange(media_preco)
+
+    head(media_preco_estado,n=3)
+    ```
+
+    Vemos então que o melhor estado para se comprar um carro de marca popular, que consideramos como das marcas Volkswagen, Chevrolet, Fiat e Honda, é o estado de Roraima, pois possui a menor média de preço.
+
+-   Qual o melhor estado para se comprar uma picape com transmissão automática e por quê?
+
+```{r}
+
+
+
+dados_picapes_automaticas <- dados_treinamento %>%
+  filter(tipo == "Picape", cambio == "Automática")
+
+preco_picapes_estado <- dados_picapes_automaticas %>%
+  group_by(estado_vendedor) %>%
+  summarise(media_preco = mean(preco)) %>%
+  arrange(media_preco)
+
+
+head(preco_picapes_estado,n=3)
+```
+
+O melhor estado para se comprar é a Paraíba, pois possui a menor média de preço para veiculos deste tipo.
+
+-   Qual o melhor estado para se comprar carros que ainda estejam dentro da garantia de fábrica e por quê?
+
+    ```{r}
+    dados_garantia <- dados_treinamento %>%
+      filter(garantia_de_fábrica=="Garantia de fábrica")
+
+
+    preço_garantia_estado <- dados_garantia %>%
+      group_by(estado_vendedor) %>%
+      summarise(media_preco = mean(preco)) %>%
+      arrange(media_preco)
+
+    head(preço_garantia_estado)
+
+    ```
+
+    O melhor estado é a Paraíba, pois possui menor média de preço para carros com garantia.
+
+-   Qual melhor cidade para comprar um carro do tipo sedã?
+
+    ```{r}
+    dados_seda = dados_treinamento %>%
+      filter(tipo == "Sedã")
+
+    media_preco_cidade = dados_seda %>%
+      group_by(cidade_vendedor) %>%
+      summarise(media_preco = mean(preco)) %>%
+      arrange(media_preco)
+
+    head(media_preco_cidade, n=3)
+    ```
+
+    A melhor cidade é a de Jaguaruna, com menor média de preço para carros do tipo sedã
+
+-   Qual cor de carro é mais vendida em São Paulo?
+
+    ```{r}
+
+    dados_sp <- dados_treinamento %>%
+      filter(estado_vendedor == "São Paulo (SP)")
+
+    contagem_cores_sp <- dados_sp %>%
+      count(cor) %>%
+      arrange(desc(n))
+
+    head(contagem_cores_sp,n=3)
+    ```
+
+    A cor de carro mais popular no estado de São Paulo é a branca, com maior contagem.
+
+-   Qual melhor tipo de anunciante para se comprar carros automáticos?
+
+```{r}
+
+dados_automaticos <- dados_treinamento %>%
+  filter(cambio == "Automática")
+
+media_preco_anunciante <- dados_automaticos %>%
+  group_by(anunciante) %>%
+  summarise(media_preco = mean(preco)) %>%
+  arrange(media_preco)
+
+head(media_preco_anunciante,n=3)
+```
+
+Por fim, a o melhor tipo de anunciante para se comprar carros automáticos são anunciantes de acessórios e serviços.
+
+# 3)
+
+Iremos estimar um modelo linear e um modelo de Arvore de decisões utilizando as variáveis preditoras descritas abaixo. Tentaremos manter o modelo simples e não utilizar variáveis que indequem coisas semelhantes.
+
+```{r}
+
+
+#variáveis preditoras
+variaveis_preditoras <- c("marca","modelo", "ano_de_fabricacao","ano_modelo", "hodometro", "cambio", "num_portas", "tipo_vendedor", "ipva_pago","estado_vendedor","tipo")
+
+#Lista de modelo
+modelos <- list()
+
+# Modelo 1: Regressão Linear
+modelo_linear <- lm(preco ~ ., data = dados_treinamento[, c("preco", variaveis_preditoras)])
+modelos[["Linear"]] <- modelo_linear
+
+# Modelo 2: Árvore de Decisão
+modelo_arvore <- rpart(preco ~ ., data = dados_treinamento[, c("preco", variaveis_preditoras)])
+modelos[["Árvore de Decisão"]] <- modelo_arvore
+
+
+```
+
+```{r}
+#como temos a marca Lamborghini presente nos testes mas não no treinamento, podemos substitui-la por uma semelhante ou excluir
+dados_teste$marca <- replace(dados_teste$marca, dados_teste$marca == "LAMBORGHINI", "FERRARI")
+
+#Por fim, caso as variáveis categóricas não estejam na base de treino, substituiremos elas pela moda.
+
+#modelo
+modelo_moda <- names(which.max(table(dados_treinamento$modelo)))
+dados_teste$modelo <- replace(dados_teste$modelo, !(dados_teste$modelo %in% unique(dados_treinamento$modelo)), modelo_moda)
+
+#ano modelo
+ano_modelo_moda <- names(which.max(table(dados_treinamento$ano_modelo)))
+dados_teste$ano_modelo <- replace(dados_teste$ano_modelo, !(dados_teste$ano_modelo %in% unique(dados_treinamento$ano_modelo)), ano_modelo_moda)
+
+#cambio
+tipo_moda <- names(which.max(table(dados_treinamento$tipo)))
+dados_teste$tipo <- replace(dados_teste$tipo, !(dados_teste$tipo %in% unique(dados_treinamento$tipo)), tipo_moda)
+
+# Fazer previsões com os modelos anteriores
+previsoes_linear <- predict(modelo_linear, newdata = dados_teste)
+previsoes_arvore <- predict(modelo_arvore, newdata = dados_teste)
+#fazer o modelo ensemble por média simples
+previsoes_ensemble <- (previsoes_linear + previsoes_arvore) / 2
+
+
+#repetir para a base de treinos, para poder calcular os erros como métricas.
+previsoes_linearTreino <- predict(modelo_linear, newdata = dados_treinamento)
+previsoes_arvoreTreino <- predict(modelo_arvore, newdata = dados_treinamento)
+
+previsoes_ensembleTreino <- (previsoes_linearTreino + previsoes_arvoreTreino) / 2
+
+
+#O RMSE (erro quadrático médio) quantifica a diferençentre os valroes previstos e os reais. Medindo o desempenho de predição do modelo e a dispersão dos erros.
+#O MAE (erro médio absoluto) indica a médica dos erros entre os valores reais e os previstos. Pode indicar o desempenho do modelo.
+
+#utilizaremos essas duas métricas para medir o desempenho. Como o modelo é emsemble, podemos também ver o R² para vermos o quão explicativo é nosso modelo.
+
+mae <- MAE(previsoes_ensembleTreino, dados_treinamento$preco)
+rmse <- RMSE(previsoes_ensembleTreino, dados_treinamento$preco)
+r_squared <- summary(lm(preco ~ previsoes_ensembleTreino, data = dados_treinamento))$r.squared
+
+mae
+rmse
+r_squared
+
+```
+
+# 4)
+
+```{r}
+dados_previstos <- data.frame(id = dados_teste$id, preco_previsto = previsoes_ensemble)
+write.csv(dados_previstos, file = "resultado_final.csv", row.names = FALSE)
+```
